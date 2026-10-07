@@ -78,7 +78,7 @@ with st.sidebar:
             else:
                 st.error("Key field cannot be empty.")
 
-    # Options unlocked ONLY if key is valid
+    # Options unlocked ONLY if API key is valid
     if st.session_state["key_valid"]:
         st.divider()
         st.header("⚙️ 2. Model Selection")
@@ -95,13 +95,33 @@ with st.sidebar:
         )
 
         st.divider()
-        st.header("📏 3. Layout & Rules Overrides")
+        st.header("🎯 3. CV Format Strategy")
 
-        # Load files for checks and checkbox defaults
-        prompt_content = load_file("master_prompt.md")
+        # Approach Selection (Default: Project-based)
+        cv_approach = st.radio(
+            "Select Structuring Approach:",
+            options=["Project-based", "Role-based"],
+            index=0,  # Default selection is Project-based
+            help="Project-based focuses on major projects and tech stacks. Role-based structures chronologically by job position.",
+        )
+
+        st.divider()
+        st.header("📏 4. Layout & Rules Overrides")
+
+        # Load local prompt and resume files
+        prompt_project = load_file("master_prompt_project_based.md")
+        prompt_role = load_file("master_prompt_role_based.md")
         resume_content = load_file("master_resume.md")
         cover_letter_content = load_file("master_cover_letter.md")
         common_cv_content = load_file("common_cv_template.md")
+
+        # Determine active prompt file based on user selection
+        if cv_approach == "Project-based":
+            active_prompt_content = prompt_project
+            active_prompt_filename = "master_prompt_project_based.md"
+        else:
+            active_prompt_content = prompt_role
+            active_prompt_filename = "master_prompt_role_based.md"
 
         use_exemplar = st.checkbox(
             "Use 2-Page CV Template as Structural Exemplar",
@@ -124,11 +144,16 @@ with st.sidebar:
         )
 
         st.divider()
-        st.header("📁 4. Local Files Status")
+        st.header("📁 5. Local Files Status")
         st.write(
-            "🟢 `master_prompt.md`"
-            if prompt_content
-            else "🔴 `master_prompt.md` (Missing)"
+            "🟢 `master_prompt_project_based.md`"
+            if prompt_project
+            else "🔴 `master_prompt_project_based.md` (Missing)"
+        )
+        st.write(
+            "🟢 `master_prompt_role_based.md`"
+            if prompt_role
+            else "🔴 `master_prompt_role_based.md` (Missing)"
         )
         st.write(
             "🟢 `master_resume.md`"
@@ -162,14 +187,18 @@ col1, col2 = st.columns([1, 1])
 
 with col1:
     st.subheader("Target Job Description")
+    st.caption(
+        f"Active Strategy: **{cv_approach}** (using `{active_prompt_filename}`)"
+    )
+
     job_description = st.text_area(
         "Paste the Job Description here:",
-        height=480,
+        height=460,
         placeholder="Paste full job description including responsibilities, mandatory requirements, and tech stack...",
     )
 
     generate_btn = st.button(
-        "🚀 Generate Tailored Package",
+        f"🚀 Generate Tailored Package ({cv_approach})",
         type="primary",
         use_container_width=True,
     )
@@ -178,22 +207,24 @@ with col2:
     st.subheader("Tailored Output & Analysis")
 
     if generate_btn:
-        # Validate critical local files
-        if not prompt_content or not resume_content:
+        # Validate active local files
+        if not active_prompt_content or not resume_content:
             st.error(
-                "Missing required local files! Ensure `master_prompt.md` and `master_resume.md` are present in your project directory."
+                f"Missing required local files! Ensure `{active_prompt_filename}` and `master_resume.md` exist in your project folder."
             )
         elif not job_description.strip():
             st.warning("Please paste a target Job Description on the left.")
         else:
             # 1. Build Dynamic System Prompt Overrides
             custom_rules = f"\n\n====================================================\nDYNAMIC RULE OVERRIDES (HIGHEST PRIORITY)\n====================================================\n"
+            custom_rules += (
+                f"- SELECTED APPROACH STRATEGY: {cv_approach.upper()}\n"
+            )
             custom_rules += f"- PROFESSIONAL SUMMARY LINE LIMIT: Max {summary_lines} lines.\n"
 
             if strict_2_page:
                 custom_rules += (
                     "- STRICT TWO-PAGE BUDGET: Keep total resume under 800-850 words. "
-                    "Limit primary role to max 4-5 high-impact bullets. Limit older roles to max 2-3 bullets. "
                     "Ensure bullet lengths remain 1-2 lines each (15-25 words max).\n"
                 )
 
@@ -202,7 +233,7 @@ with col2:
                     f"- CUSTOM USER DIRECTIVE: {extra_instructions.strip()}\n"
                 )
 
-            final_system_prompt = prompt_content + custom_rules
+            final_system_prompt = active_prompt_content + custom_rules
 
             # 2. Build User Context Payload (including optional Exemplar)
             exemplar_block = ""
@@ -244,7 +275,7 @@ Extract technical facts, project experience, and achievements ONLY from here:
             )
 
             with st.spinner(
-                f"Analyzing Job Description & tailoring package with `{model}`..."
+                f" tailoring package ({cv_approach}) using `{model}`..."
             ):
                 try:
                     response = client.chat.completions.create(
@@ -257,16 +288,18 @@ Extract technical facts, project experience, and achievements ONLY from here:
                     )
 
                     result_text = response.choices[0].message.content
-                    st.success("Optimization Complete!")
+                    st.success(
+                        f"Optimization Complete! Format: {cv_approach}"
+                    )
 
                     # Display formatted result
                     st.markdown(result_text)
 
                     st.divider()
                     st.download_button(
-                        label="💾 Download Tailored Package (.md)",
+                        label=f"💾 Download Tailored Package ({cv_approach} .md)",
                         data=result_text,
-                        file_name="tailored_application_package.md",
+                        file_name=f"tailored_cv_{cv_approach.lower().replace('-', '_')}.md",
                         mime="text/markdown",
                         use_container_width=True,
                     )
